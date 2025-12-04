@@ -1,4 +1,5 @@
-const API_URL = 'http://localhost:3001/api/auth';
+import { SERVER_URL } from '../config';
+const API_URL = `${SERVER_URL}/api/auth`;
 
 export default {
   async login(username, password) {

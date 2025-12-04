@@ -2,11 +2,13 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import authService from '../services/auth';
+import { SERVER_URL } from '../config';
 
 const router = useRouter();
 const activeCategory = ref('play');
 const currentUser = ref(null);
 const leaderboard = ref([]);
+const socket = io(SERVER_URL, { query: { userId: userId } });
 
 // ui states
 const showAuthModal = ref(false);
