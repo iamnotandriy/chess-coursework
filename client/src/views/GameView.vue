@@ -1,297 +1,244 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import io from 'socket.io-client';
 import { Chess } from 'chess.js';
 import ChessBoard from '../components/ChessBoard.vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import authService from '../services/auth';
 
 const router = useRouter();
-const socket = io('http://localhost:3001');
+const route = useRoute();
 const game = new Chess();
+
+const getUserId = () => {
+  const user = authService.getUser();
+  if (user && user.id) return user.id;
+  let id = sessionStorage.getItem('chess_userId');
+  if (!id) { id = 'guest_' + Math.random().toString(36).substr(2, 9); sessionStorage.setItem('chess_userId', id); }
+  return id;
+};
+const userId = getUserId();
+const socket = io('http://localhost:3001', { query: { userId: userId } });
 
 const status = ref('Welcome');
 const isSearching = ref(false);
 const myColor = ref(null);
 const currentRoom = ref(null);
 const boardData = ref(game.board());
+const validMoves = ref([]);
+const opponentDisconnected = ref(false);
+const currentTurnColor = ref('w');
+const opponentInfo = ref({ username: 'Opponent', rating: '???', avatar: '', id: null });
+const gameMode = ref('standard');
+
+const showSettings = ref(false);
+const showOpponentProfile = ref(false);
+const opponentProfileData = ref(null);
+
+const isMyTurn = computed(() => myColor.value && currentTurnColor.value === myColor.value.charAt(0));
+const canViewProfile = computed(() => opponentInfo.value.username !== 'Anonymous' && opponentInfo.value.id);
+
+const pieceNames = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
+const getMoveDesc = (move) => {
+  const piece = pieceNames[move.piece];
+  const action = move.flags.includes('c') ? 'takes' : 'to';
+  const check = move.san.includes('+') ? '(Check)' : '';
+  const mate = move.san.includes('#') ? '(Mate)' : '';
+  if (move.flags.includes('k') || move.flags.includes('q')) return 'Castling';
+  return `${piece} ${action} ${move.to} ${check}${mate}`;
+};
+const rawHistory = ref([]);
+const formattedHistory = computed(() => {
+  const h = rawHistory.value;
+  const p = [];
+  for (let i = 0; i < h.length; i += 2) {
+    p.push({ num: (i/2)+1, white: getMoveDesc(h[i]), black: h[i+1] ? getMoveDesc(h[i+1]) : '' });
+  }
+  return p;
+});
+
+const boardScale = ref(80);
+const useGlassEffects = ref(true);
+const themes = [{id:'default',name:'MINT'},{id:'blue',name:'CYBER'},{id:'gold',name:'GOLD'}];
+const currentTheme = ref('default');
+
+onMounted(() => {
+  const theme = localStorage.getItem('chess_theme');
+  const scale = localStorage.getItem('chess_scale');
+  const glass = localStorage.getItem('chess_glass');
+  if(theme) setTheme(theme);
+  if(scale) boardScale.value = parseInt(scale);
+  if(glass !== null) { useGlassEffects.value = glass === 'true'; applyGlassEffect(); }
+});
+
+const setTheme = (t) => { currentTheme.value = t; document.documentElement.setAttribute('data-theme', t); localStorage.setItem('chess_theme', t); };
+const updateScale = (v) => { boardScale.value = v; localStorage.setItem('chess_scale', v); };
+const toggleGlass = (v) => { useGlassEffects.value = v; localStorage.setItem('chess_glass', v); applyGlassEffect(); };
+const applyGlassEffect = () => document.body.classList.toggle('no-glass', !useGlassEffects.value);
+
+const viewOpponent = async () => {
+  if (!canViewProfile.value) return;
+  try {
+    const data = await authService.getPublicProfile(opponentInfo.value.id);
+    opponentProfileData.value = data;
+    showOpponentProfile.value = true;
+  } catch (e) { console.error(e); }
+};
 
 const gameOver = ref(false);
 const gameResult = ref('');
 const winner = ref(null);
 
-const leaveGame = () => {
-  socket.disconnect();
-  router.push('/');
+const leaveGame = () => { socket.disconnect(); router.push('/'); };
+const findGame = () => { 
+  if(isSearching.value) return; 
+  isSearching.value = true; 
+  const mode = route.query.mode || 'standard';
+  status.value = `SEARCHING (${mode.toUpperCase()})...`; 
+  socket.emit('find_game', { mode: mode }); 
 };
+const cancelSearch = () => { isSearching.value = false; status.value = "CANCELED"; socket.emit('cancel_search'); };
 
-// --- SEARCH FUNCTIONS ---
-const findGame = () => {
-  if (isSearching.value) return;
-  isSearching.value = true;
-  status.value = "Searching for opponent...";
-  socket.emit('find_game');
-};
-
-const cancelSearch = () => {
-  isSearching.value = false;
-  status.value = "Search canceled";
-  socket.emit('cancel_search');
-};
-// -----------------------
-
-const checkGameOver = () => {
+const updateGameState = () => {
+  boardData.value = game.board();
+  rawHistory.value = game.history({ verbose: true });
+  currentTurnColor.value = game.turn();
   if (game.isGameOver()) {
     gameOver.value = true;
-    if (game.isCheckmate()) {
-      const loser = game.turn() === 'w' ? 'White' : 'Black';
-      const winColor = game.turn() === 'w' ? 'black' : 'white';
-      gameResult.value = `Checkmate! ${loser} is defeated.`;
-      winner.value = winColor;
-    } else if (game.isDraw()) {
-      gameResult.value = 'Draw!';
-      winner.value = 'draw';
-    } else {
-      gameResult.value = 'Game Over';
-    }
+    if (game.isCheckmate()) { const l = game.turn()==='w'?'White':'Black'; gameResult.value=`CHECKMATE! ${l.toUpperCase()} LOST`; winner.value = game.turn()==='w'?'black':'white'; }
+    else if (game.isDraw()) { gameResult.value='DRAW'; winner.value='draw'; }
+    else { gameResult.value='GAME OVER'; }
   }
+  setTimeout(() => { const el = document.getElementById('move-log'); if(el) el.scrollTop = el.scrollHeight; }, 10);
 };
 
-onMounted(() => {
-  socket.on('connect', () => { status.value = 'Connected to server'; });
-  
-  socket.on('game_start', (data) => {
-    isSearching.value = false;
-    status.value = `Playing as ${data.color}`;
-    myColor.value = data.color;
-    currentRoom.value = data.roomId;
-    
-    game.reset();
-    gameOver.value = false;
-    winner.value = null;
-    updateBoard();
-  });
-
-  socket.on('opponent_move', (move) => {
-    game.move(move);
-    updateBoard();
-    checkGameOver();
-  });
-});
-
-onUnmounted(() => {
-  socket.disconnect();
-});
-
-const updateBoard = () => {
-  boardData.value = game.board();
+const handleSelect = (sq) => {
+  if(!sq) { validMoves.value=[]; return; }
+  const p = game.get(sq);
+  if(p && p.color !== myColor.value.charAt(0)) { validMoves.value=[]; return; }
+  validMoves.value = game.moves({ square: sq, verbose: true }).map(m => m.to);
 };
 
 const handleMove = ({ from, to }) => {
-  if (game.turn() !== myColor.value.charAt(0)) return; 
-  if (gameOver.value) return;
-
+  if(game.turn() !== myColor.value.charAt(0) || gameOver.value) return;
   try {
-    const moveResult = game.move({ from, to, promotion: 'q' });
-    if (moveResult) {
-      socket.emit('make_move', { roomId: currentRoom.value, move: moveResult });
-      updateBoard();
-      checkGameOver();
+    const res = game.move({ from, to, promotion: 'q' });
+    if(res) {
+      socket.emit('make_move', { roomId: currentRoom.value, move: res, fen: game.fen(), history: game.history({verbose:true}) });
+      updateGameState(); validMoves.value = [];
     }
-  } catch (e) {}
+  } catch(e){}
 };
+
+onMounted(() => {
+  socket.on('connect', () => status.value = 'CONNECTED');
+  socket.on('game_start', (data) => {
+    isSearching.value = false;
+    status.value = `PLAYING AS ${data.color.toUpperCase()}`;
+    myColor.value = data.color;
+    currentRoom.value = data.roomId;
+    if(data.opponent) opponentInfo.value = data.opponent;
+    if(data.mode) gameMode.value = data.mode;
+    
+    if(data.fen) { game.load(data.fen); rawHistory.value = data.history || []; } 
+    else { game.reset(); rawHistory.value = []; }
+    gameOver.value = false; winner.value = null; opponentDisconnected.value = false; updateGameState();
+  });
+  socket.on('opponent_move', (m) => { game.move(m); updateGameState(); });
+  socket.on('opponent_disconnected', () => opponentDisconnected.value = true);
+  socket.on('opponent_reconnected', () => opponentDisconnected.value = false);
+  socket.on('game_over', (d) => { gameOver.value=true; if(d.reason==='Opponent disconnected'){ gameResult.value='OPPONENT TIMED OUT'; winner.value=myColor.value; } });
+});
+onUnmounted(() => socket.disconnect());
 </script>
 
 <template>
-  <div class="main-wrapper">
+  <div class="layout">
+    <div class="liquid-background"><div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div></div>
+    <header class="navbar glass-panel">
+      <div class="logo">CHESS <span class="accent-text">PLUS</span></div>
+      <div class="actions"><button class="btn-icon" @click="showSettings=true"><span>⚙️</span></button><button class="btn btn-danger" @click="leaveGame"><span>EXIT</span></button></div>
+    </header>
+    <Transition name="fade"><div v-if="showSettings" class="settings-overlay" @click.self="showSettings=false"><div class="settings-modal glass-panel"><div class="modal-header"><h3>SETTINGS</h3><button class="btn-icon close-s" @click="showSettings=false"><span>✕</span></button></div><div class="setting-row"><label>Glass Effects</label><label class="switch"><input type="checkbox" :checked="useGlassEffects" @change="toggleGlass($event.target.checked)"><span class="slider"></span></label></div><div class="setting-group"><label>Size: {{boardScale}}%</label><input type="range" min="50" max="100" :value="boardScale" @input="updateScale($event.target.value)"></div><div class="setting-group"><label>Theme</label><div class="theme-grid"><button v-for="t in themes" :key="t.id" class="theme-btn" :class="{active:currentTheme===t.id}" @click="setTheme(t.id)">{{t.name}}</button></div></div></div></div></Transition>
+    <Transition name="fade"><div v-if="showOpponentProfile && opponentProfileData" class="settings-overlay" @click.self="showOpponentProfile = false"><div class="profile-card glass-panel"><div class="profile-header"><img v-if="opponentProfileData.avatar" :src="opponentProfileData.avatar" class="big-avatar-img"><div v-else class="big-avatar"></div><div class="profile-names"><h3>{{ opponentProfileData.username }}</h3><span class="elo-tag">{{ opponentProfileData.rating }} ELO</span></div></div><p class="bio-text">{{ opponentProfileData.bio || 'No bio provided.' }}</p><div class="stats-grid"><div class="stat-box"><span class="stat-val">{{ opponentProfileData.wins }}</span><span class="stat-label">WINS</span></div><div class="stat-box"><span class="stat-val">{{ opponentProfileData.matches }}</span><span class="stat-label">GAMES</span></div></div><div class="profile-actions"><button class="btn btn-danger" @click="showOpponentProfile = false"><span>CLOSE</span></button></div></div></div></Transition>
     
-    <nav class="navbar">
-      <button class="nav-btn back-btn" @click="leaveGame">
-        <span class="icon">❮</span> Back
-      </button>
-      <div class="logo">CHESS <span class="accent">PLUS</span></div>
-      <div class="status-indicator" :class="{ 'online': status !== 'Disconnected' }"></div>
-    </nav>
+    <div class="content-area">
+      <Transition name="fade"><div v-if="opponentDisconnected && !gameOver" class="disconnect-banner glass-panel">⚠️ Opponent Offline. Time Bank ticking...</div></Transition>
+      <Transition name="fade"><div v-if="!currentRoom" class="center-wrapper"><div class="lobby-card glass-panel"><h1 class="lobby-title">READY?</h1><div class="status-badge" :class="{pulse:isSearching}">{{status}}</div><div v-if="isSearching" class="loader-ring"></div><div class="lobby-actions"><button v-if="!isSearching" class="btn btn-primary big" @click="findGame"><span>FIND MATCH</span></button><button v-else class="btn btn-danger big" @click="cancelSearch"><span>CANCEL</span></button></div></div></div></Transition>
+      <Transition name="fade"><div v-if="gameOver" class="center-wrapper z-high"><div class="result-card glass-panel"><div class="result-icon">{{winner===myColor?'🏆':(winner==='draw'?'🤝':'💀')}}</div><h2>{{winner===myColor?'VICTORY':(winner==='draw'?'DRAW':'DEFEAT')}}</h2><p class="result-reason">{{gameResult}}</p><div class="btn-group"><button class="btn btn-primary" @click="findGame"><span>REMATCH</span></button><button class="btn btn-danger" @click="leaveGame"><span>EXIT</span></button></div></div></div></Transition>
 
-    <Transition name="fade">
-      <div v-if="gameOver" class="overlay">
-        <div class="modal result-modal">
-          <h2>GAME OVER</h2>
-          <p class="result-message">{{ gameResult }}</p>
-          <div class="winner-icon">
-            <span v-if="winner === myColor">🏆 VICTORY</span>
-            <span v-else-if="winner === 'draw'">🤝 DRAW</span>
-            <span v-else>💀 DEFEAT</span>
-          </div>
-          <button class="primary-btn" @click="findGame">Find New Game</button>
-          <button class="secondary-btn" @click="leaveGame">Exit to Menu</button>
-        </div>
+      <div v-if="currentRoom" class="game-grid">
+        <div class="board-area"><div class="board-wrapper glass-panel" :style="{height:boardScale+'vmin',width:boardScale+'vmin'}"><ChessBoard :board="boardData" :flipped="myColor==='black'" :valid-moves="validMoves" :player-color="myColor" @move="handleMove" @select="handleSelect"/></div></div>
+        <aside class="sidebar glass-panel">
+          <div class="player-card" :class="{offline:opponentDisconnected, clickable: canViewProfile}" @click="viewOpponent"><div v-if="opponentInfo.avatar" class="avatar-img-wrap"><img :src="opponentInfo.avatar" class="avatar-img"></div><div v-else class="avatar op-av"></div><div class="player-details"><span class="p-name">{{opponentInfo.username}}</span><span class="p-status">{{opponentDisconnected?'OFFLINE':opponentInfo.rating+' ELO'}}</span></div><div v-if="!isMyTurn&&!gameOver" class="turn-marker"></div></div>
+          <div class="log-container"><div class="log-header"><span>#</span><span>WHITE</span><span>BLACK</span></div><div class="log-scroll" id="move-log"><div v-if="formattedHistory.length===0" class="empty-msg">START</div><div v-for="t in formattedHistory" :key="t.num" class="log-row detailed"><span class="turn-num">{{t.num}}.</span><span class="move w" :title="t.white">{{t.white}}</span><span class="move b" :title="t.black">{{t.black}}</span></div></div></div>
+          <div class="player-card" :class="{'active-turn':isMyTurn&&!gameOver}"><div class="avatar my-av"></div><div class="player-details"><span class="p-name">YOU</span><span class="p-status">RATING: 1200</span></div><div v-if="isMyTurn&&!gameOver" class="turn-marker"></div></div>
+        </aside>
       </div>
-    </Transition>
-
-    <Transition name="fade">
-      <div v-if="!currentRoom" class="center-container">
-        <div class="lobby-card">
-          <h2>Ready to Play?</h2>
-          <p class="status-text">{{ status }}</p>
-          
-          <div v-if="isSearching" class="loader"></div>
-          
-          <div class="button-group">
-            <button 
-              v-if="!isSearching"
-              class="primary-btn big-btn" 
-              @click="findGame"
-            >
-              Find Match
-            </button>
-            
-            <button 
-              v-else 
-              class="cancel-btn big-btn" 
-              @click="cancelSearch"
-            >
-              Cancel Search
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <Transition name="fade">
-      <div v-if="currentRoom" class="game-layout">
-        <div class="player-bar top">
-          <div class="avatar opponent-avatar"></div>
-          <div class="player-info">
-            <span class="name">Opponent</span>
-            <span class="rating">Rating: ???</span>
-          </div>
-        </div>
-
-        <div class="board-wrapper">
-          <ChessBoard 
-            :board="boardData" 
-            :flipped="myColor === 'black'" 
-            @move="handleMove"
-          />
-        </div>
-
-        <div class="player-bar bottom">
-          <div class="avatar my-avatar"></div>
-          <div class="player-info">
-            <span class="name">You ({{ myColor }})</span>
-            <span class="rating">Rating: 1200</span>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* global alignment for full screen */
-.main-wrapper {
-  width: 100vw;
-  height: 100vh;
-  background: radial-gradient(circle at top, #2b303b 0%, #101014 100%);
-  color: white;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
-}
+.mode-tag { font-size: 0.8rem; background: var(--danger); padding: 2px 8px; border-radius: 4px; margin-left: 10px; color: #fff; vertical-align: middle; }
+.avatar-img { width: 50px; height: 50px; border-radius: 4px; object-fit: cover; clip-path: polygon(10% 0, 100% 0, 100% 90%, 90% 100%, 0 100%, 0 10%); border: 1px solid var(--accent); }
+.big-avatar-img { width: 80px; height: 80px; border-radius: 8px; object-fit: cover; border: 2px solid var(--accent); transform: skewX(2deg); }
+.settings-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99; }
+.settings-modal { position: absolute; top: 80px; right: 20px; width: 320px; padding: 25px; border-radius: 4px; z-index: 100; transform: skewX(-2deg); }
+.layout { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+.navbar { height: 70px; margin: 0; border-radius: 0; border-bottom: 1px solid var(--glass-border); padding: 0 30px; display: flex; justify-content: space-between; align-items: center; z-index: 50; }
+.logo { font-weight: 900; font-size: 1.5rem; letter-spacing: 2px; font-style: italic; }
+.accent-text { color: var(--accent); }
+.modal-header { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.setting-group { margin-bottom: 20px; }
+.setting-group label { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+.setting-group input[type="range"] { width: 100%; accent-color: var(--accent); }
+.theme-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+.theme-btn { padding: 10px; font-size: 0.8rem; background: rgba(255,255,255,0.05); border: 1px solid transparent; color: #aaa; cursor: pointer; transition: all 0.2s; text-transform: uppercase; }
+.theme-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(255,255,255,0.1); }
+.center-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; z-index: 40; }
+.z-high { z-index: 60; }
+.lobby-card, .result-card, .profile-card { padding: 50px; border-radius: 4px; text-align: center; min-width: 400px; display: flex; flex-direction: column; align-items: center; gap: 25px; transform: skewX(-2deg); }
+.profile-card { width: 500px; }
+.lobby-title { font-size: 3rem; margin: 0; font-weight: 900; letter-spacing: -2px; font-style: italic; }
+.status-badge { padding: 5px 15px; background: rgba(255,255,255,0.05); color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 2px; }
+.status-badge.pulse { color: var(--accent); animation: pulse 1.5s infinite; }
+.btn.big { padding: 20px 60px; font-size: 1.2rem; width: 100%; }
+.loader-ring { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+.result-icon { font-size: 3rem; margin-bottom: -10px; }
+.game-grid { display: flex; width: 100%; height: calc(100vh - 70px); padding: 20px; gap: 20px; }
+.board-area { flex: 1; display: flex; justify-content: center; align-items: center; }
+.board-wrapper { padding: 15px; border-radius: 4px; display: flex; justify-content: center; align-items: center; }
+.sidebar { width: 350px; display: flex; flex-direction: column; gap: 15px; padding: 20px; border-radius: 4px; }
+.player-card { display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(255,255,255,0.02); border-left: 3px solid transparent; transition: all 0.3s; position: relative; }
+.player-card.active-turn { background: rgba(255,255,255,0.05); border-left-color: var(--accent); box-shadow: 10px 0 30px -10px rgba(0,0,0,0.5); }
+.avatar { width: 50px; height: 50px; background: #333; clip-path: polygon(10% 0, 100% 0, 100% 90%, 90% 100%, 0 100%, 0 10%); }
+.op-av { background: linear-gradient(135deg, #ff9a9e, #fad0c4); }
+.my-av { background: linear-gradient(135deg, var(--accent), #1d1d1d); }
+.p-name { font-weight: 800; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px; display: block; }
+.p-status { font-size: 0.7rem; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
+.turn-marker { position: absolute; right: 15px; width: 10px; height: 10px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); }
+.log-container { flex: 1; background: rgba(0,0,0,0.3); border-radius: 4px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--glass-border); }
+.log-header { display: grid; grid-template-columns: 30px 1fr 1fr; padding: 10px; background: rgba(255,255,255,0.05); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); border-bottom: 1px solid var(--glass-border); }
+.log-scroll { flex: 1; overflow-y: auto; padding: 5px 0; }
+.log-row.detailed { font-size: 0.75rem; grid-template-columns: 30px 1fr 1fr; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.03); padding: 8px 5px; display: grid; }
+.move { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #ddd; }
+.turn-num { color: var(--accent); opacity: 0.8; }
+.empty-msg { padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 2px; }
+.disconnect-banner { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); background: var(--danger); color: #fff; padding: 10px 30px; border-radius: 2px; font-weight: 800; z-index: 100; box-shadow: 0 5px 20px rgba(0,0,0,0.5); letter-spacing: 1px; }
+.profile-header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px; }
+.stats-grid { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
+.stat-box { background: rgba(255,255,255,0.05); padding: 10px; width: 80px; }
+.stat-val { font-weight: 900; display: block; font-size: 1.2rem; }
+.bio-text { font-style: italic; color: #aaa; margin-bottom: 20px; }
+.clickable { cursor: pointer; }
+.clickable:hover { background: rgba(255,255,255,0.1); }
 
-.navbar {
-  flex: 0 0 60px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.logo { font-weight: bold; font-size: 1.2rem; letter-spacing: 2px; }
-.accent { color: #42b883; }
-
-/* Centering for Lobby */
-.center-container {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-}
-
-.game-layout {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 10px;
-  gap: 15px; /* smaller gap for smaller screens */
-}
-
-/* Button styles */
-.primary-btn, .cancel-btn {
-  border: none; padding: 12px 30px; font-weight: bold; cursor: pointer; border-radius: 6px; text-transform: uppercase; font-size: 1rem; transition: all 0.2s;
-  width: 100%; /* Кнопки на всю ширину картки */
-}
-.primary-btn { background: #42b883; color: #000; }
-.primary-btn:hover { background: #3aa876; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(66, 184, 131, 0.4); }
-
-.cancel-btn { background: #e74c3c; color: white; }
-.cancel-btn:hover { background: #c0392b; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4); }
-
-.nav-btn { background: none; border: none; color: #aaa; cursor: pointer; font-size: 1rem; }
-.secondary-btn { background: transparent; border: 1px solid #555; color: #ddd; margin-left: 10px; padding: 10px 20px; border-radius: 6px; cursor: pointer; }
-
-/* lobby card */
-.lobby-card {
-  background: rgba(30, 30, 35, 0.8);
-  padding: 40px;
-  border-radius: 20px;
-  text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-  min-width: 320px;
-}
-
-.loader {
-  border: 3px solid rgba(255,255,255,0.1);
-  border-top: 3px solid #42b883;
-  border-radius: 50%; width: 30px; height: 30px;
-  animation: spin 1s linear infinite; margin: 0 auto 20px auto;
-}
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-.board-wrapper {
-  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-  border-radius: 4px;
-}
-.player-bar {
-  display: flex; align-items: center; width: 100%; max-width: 500px;
-  gap: 15px; background: rgba(0,0,0,0.3); padding: 8px 15px; border-radius: 10px;
-}
-.avatar { width: 35px; height: 35px; border-radius: 50%; background: #555; }
-.opponent-avatar { background: #e74c3c; }
-.my-avatar { background: #42b883; }
-.player-info { display: flex; flex-direction: column; }
-.name { font-weight: bold; font-size: 0.9rem; }
-.rating { font-size: 0.75rem; color: #aaa; }
-.status-indicator { width: 8px; height: 8px; background: red; border-radius: 50%; }
-.status-indicator.online { background: #42b883; box-shadow: 0 0 10px #42b883; }
-
-.overlay {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center;
-  backdrop-filter: blur(5px); z-index: 999;
-}
-.result-modal {
-  background: #1e1e24; border: 1px solid #333; padding: 40px; border-radius: 15px; text-align: center;
-}
-
-.fade-enter-active, .fade-leave-active { transition: opacity 0.5s ease; }
+@keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.pop-enter-active, .pop-leave-active { transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.pop-enter-from, .pop-leave-to { opacity: 0; transform: scale(0.9) translateY(-10px); }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

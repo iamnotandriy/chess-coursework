@@ -2,55 +2,183 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const mongoose = require('mongoose');
+const authRoutes = require('./routes/auth');
+const User = require('./models/User');
 
 const app = express();
+
+// avatar upload limit
 app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+mongoose.connect('mongodb://127.0.0.1:27017/chess-master')
+  .then(() => console.log('✅ MONGODB CONNECTED'))
+  .catch(err => console.error('❌ MONGODB ERROR:', err));
+
+app.use('/api/auth', authRoutes);
 
 const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"]
-  }
-});
+// GAME STATE
+const games = {}; 
+const users = {}; 
+const timeouts = {};
 
-let waitingPlayer = null;
+// QUEUES
+const queues = {
+  standard: null, // Ranked
+  casual: null    // casual
+};
 
+// socket.io logic
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  const userId = socket.handshake.query.userId;
+  if (!userId) { socket.disconnect(); return; }
 
-  socket.on('find_game', () => {
-    if (waitingPlayer && waitingPlayer.id === socket.id) {
-      return; 
+  console.log(`Connected: ${userId}`);
+
+  // reconnect
+  if (users[userId]) {
+    const userData = users[userId];
+    const roomId = userData.roomId;
+    
+    if (games[roomId]) {
+      if (timeouts[userId]) { clearTimeout(timeouts[userId]); delete timeouts[userId]; }
+
+      if (userData.lastDisconnect) {
+        const timeAway = Date.now() - userData.lastDisconnect;
+        userData.timeLeft -= timeAway;
+        userData.lastDisconnect = null;
+      }
+
+      if (userData.timeLeft <= 0) {
+        handleTimeout(userId, roomId);
+        return;
+      }
+
+      socket.join(roomId);
+      users[userId].socketId = socket.id;
+
+      const game = games[roomId];
+      socket.emit('game_start', { 
+        color: userData.color, roomId, 
+        fen: game.fen, history: game.history,
+        mode: game.mode,
+        opponent: games[roomId].players[userData.color === 'white' ? 'black' : 'white']
+      });
+      socket.to(roomId).emit('opponent_reconnected');
     }
+  }
 
-    if (waitingPlayer) {
-      const roomID = waitingPlayer.id + '#' + socket.id;
-      socket.join(roomID);
-      waitingPlayer.join(roomID);
+  // matchmaking
+  socket.on('find_game', async (data) => {
+    const mode = data?.mode || 'standard';
+    
+    // disable multiple queueing
+    if (queues[mode] && queues[mode].userId === userId) return;
 
-      io.to(waitingPlayer.id).emit('game_start', { color: 'white', roomId: roomID });
-      io.to(socket.id).emit('game_start', { color: 'black', roomId: roomID });
-      
-      console.log(`Game started in room: ${roomID}`);
-      waitingPlayer = null;
+    if (queues[mode]) {
+      const opponent = queues[mode];
+      queues[mode] = null;
+      const roomId = opponent.userId + '#' + userId;
+
+      const p1Data = await getUserData(opponent.userId);
+      const p2Data = await getUserData(userId);
+
+      opponent.socket.join(roomId);
+      socket.join(roomId);
+
+      games[roomId] = { 
+        white: opponent.userId, black: userId, 
+        fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 
+        history: [],
+        mode: mode,
+        players: { white: p1Data, black: p2Data }
+      };
+
+      users[opponent.userId] = { socketId: opponent.socket.id, roomId, color: 'white', timeLeft: 60000, ...p1Data };
+      users[userId] = { socketId: socket.id, roomId, color: 'black', timeLeft: 60000, ...p2Data };
+
+      io.to(opponent.socket.id).emit('game_start', { color: 'white', roomId, opponent: p2Data, mode });
+      io.to(socket.id).emit('game_start', { color: 'black', roomId, opponent: p1Data, mode });
+
     } else {
-      waitingPlayer = socket;
-      socket.emit('waiting', 'Searching for opponent...');
+      queues[mode] = { socket, userId };
+      socket.emit('waiting', `Searching for ${mode} match...`);
     }
   });
 
+  // make move
   socket.on('make_move', (data) => {
-    socket.to(data.roomId).emit('opponent_move', data.move);
+    const game = games[data.roomId];
+    if (game) {
+      game.fen = data.fen;
+      game.history = data.history;
+      socket.to(data.roomId).emit('opponent_move', data.move);
+    }
+  });
+
+  socket.on('cancel_search', () => {
+    for (const m in queues) if (queues[m]?.userId === userId) queues[m] = null;
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
-    if (waitingPlayer === socket) waitingPlayer = null;
+    for (const m in queues) if (queues[m]?.userId === userId) queues[m] = null;
+
+    if (users[userId]) {
+      const { roomId } = users[userId];
+      if (games[roomId]) {
+        socket.to(roomId).emit('opponent_disconnected');
+        users[userId].lastDisconnect = Date.now();
+        const waitTime = Math.max(0, users[userId].timeLeft);
+        timeouts[userId] = setTimeout(() => handleTimeout(userId, roomId), waitTime);
+      }
+    }
   });
 });
 
-server.listen(3001, () => {
-  console.log('SERVER IS RUNNING ON PORT 3001');
-});
+async function getUserData(id) {
+  if (id.startsWith('guest')) return { id, username: 'Guest', rating: 1200, avatar: '', bio: 'Just a guest' };
+  try {
+    const u = await User.findById(id);
+    if (!u) return { id, username: 'Unknown', rating: 1200 };
+    if (u.isPrivate) return { id: u._id, username: 'Anonymous', rating: u.rating, avatar: '', bio: 'Private.', isPrivate: true };
+    return { id: u._id, username: u.username, rating: u.rating, avatar: u.avatar, bio: u.bio, wins: u.wins, matches: u.matches };
+  } catch (e) { return { id, username: 'Error', rating: 0 }; }
+}
+
+async function handleTimeout(userId, roomId) {
+  if (!games[roomId]) return;
+  const loserColor = users[userId].color;
+  const winnerColor = loserColor === 'white' ? 'black' : 'white';
+  const winnerId = games[roomId][winnerColor === 'white' ? 'white' : 'black'];
+
+  io.to(roomId).emit('game_over', { winner: winnerColor, reason: 'Opponent disconnected' });
+  if (games[roomId].mode === 'standard') await updateRatings(winnerId, userId);
+  delete games[roomId];
+  delete users[userId]; 
+}
+
+async function updateRatings(winnerId, loserId, draw = false) {
+  try {
+    if (!winnerId || !loserId || winnerId.startsWith('guest') || loserId.startsWith('guest')) return;
+    const winner = await User.findById(winnerId);
+    const loser = await User.findById(loserId);
+    if (!winner || !loser) return;
+
+    const K = 32;
+    const expectedWinner = 1 / (1 + Math.pow(10, (loser.rating - winner.rating) / 400));
+    const actualScore = draw ? 0.5 : 1;
+    winner.rating = Math.round(winner.rating + K * (actualScore - expectedWinner));
+    if (!draw) loser.rating = Math.round(loser.rating - K * (actualScore - expectedWinner));
+
+    if (!draw) winner.wins++;
+    winner.matches++; loser.matches++;
+    await winner.save(); await loser.save();
+  } catch (e) { console.error(e); }
+}
+
+server.listen(3001, () => console.log('SERVER RUNNING PORT 3001'));
