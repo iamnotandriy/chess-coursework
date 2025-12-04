@@ -41,18 +41,18 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// GET PROFILE + RANK CALCULATION
+// get user stats
 router.get('/stats/:userId', async (req, res) => {
   try {
     const user = await User.findById(req.params.userId).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     
-    // Рахуємо ранг (місце в топі)
+    // calculate rank
     const higherRankedUsers = await User.countDocuments({ rating: { $gt: user.rating } });
     const rank = higherRankedUsers + 1;
 
     const userData = user.toObject();
-    userData.rank = rank; // Додаємо поле rank у відповідь
+    userData.rank = rank;
 
     res.json(userData);
   } catch (error) {
@@ -60,7 +60,7 @@ router.get('/stats/:userId', async (req, res) => {
   }
 });
 
-// UPDATE PROFILE
+// update profile
 router.put('/profile/:userId', async (req, res) => {
   try {
     const { bio, avatar, isPrivate } = req.body;

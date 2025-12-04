@@ -111,7 +111,7 @@ const goToGame = (mode) => {
   router.push(`/game?mode=${mode}`);
 };
 
-// ОНОВЛЕНЕ МЕНЮ
+// main menu
 const menuItems = [
   { id: 'play', label: 'PLAY', desc: 'START JOURNEY', subItems: [
     { label: 'RANKED MATCH', desc: 'COMPETE FOR ELO', action: () => goToGame('standard') },

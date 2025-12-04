@@ -32,7 +32,7 @@ io.on('connection', (socket) => {
 
   console.log(`Connected: ${userId}`);
 
-  // Reconnect
+  // reconnect
   if (users[userId]) {
     const d = users[userId];
     const roomId = d.roomId;
@@ -59,7 +59,7 @@ io.on('connection', (socket) => {
     }
   }
 
-  // Matchmaking
+  // matchmaking
   socket.on('find_game', async (data) => {
     const mode = data?.mode || 'standard';
     if (queues[mode] && queues[mode].userId === userId) return;
@@ -167,7 +167,7 @@ async function updateRatings(winnerId, loserId, draw = false) {
     const actualScoreLoser = draw ? 0.5 : 0;
     loser.rating = Math.round(loser.rating + K * (actualScoreLoser - expectedLoser));
 
-    // Update Records
+    // update records
     if (winner.rating > (winner.highestRating || 0)) winner.highestRating = winner.rating;
     if (loser.rating > (loser.highestRating || 0)) loser.highestRating = loser.rating;
 

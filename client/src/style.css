@@ -3,40 +3,38 @@
   line-height: 1.5;
   font-weight: 500;
 
-  /* --- 1. СТАРІ КОЛЬОРИ (V1.3) --- */
   --bg-color: #050505;
   --text-color: #eeeeee;
   --text-muted: #888888;
   
   --primary: #ffffff;
-  --accent: #42b883;       /* Той самий зелений */
+  --accent: #42b883;
   --accent-glow: rgba(66, 184, 131, 0.4);
-  --danger: #ff3333;        /* Яскравий червоний */
+  --danger: #ff3333;
   
-  /* Кольори дошки */
+  /* board colors */
   --board-light: #ebecd0;
   --board-dark: #739552;
   
-  /* Скло (Більш прозоре, як було раніше) */
+  /* glass */
   --glass-bg: rgba(20, 20, 20, 0.35); 
   --glass-border: rgba(255, 255, 255, 0.15);
   --glass-blur: 20px;
   --glass-shadow: 0 8px 32px rgba(0,0,0,0.3);
   
-  /* Фон (Deep Space) */
   --blob-1: #1e1e3f; 
   --blob-2: #16213e;
   --blob-3: #1a3a5a;
 }
 
-/* Теми (Теж старі) */
+/* themes */
 [data-theme="blue"] { --accent: #29b6f6; --accent-glow: rgba(41, 182, 246, 0.4); --board-light: #dee3e6; --board-dark: #4b7399; --blob-1: #0d1b2a; }
 [data-theme="gold"] { --accent: #ffd700; --accent-glow: rgba(255, 215, 0, 0.4); --board-light: #f0d9b5; --board-dark: #b58863; --blob-1: #2c1a08; }
 
 body.no-glass { --glass-bg: #111; --glass-blur: 0px; background-color: #080808; }
 body.no-glass .liquid-background { display: none; }
 
-/* --- ОСНОВА --- */
+/* main */
 body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-color); overflow: hidden; }
 .liquid-background { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
 #app, .layout, .home-layout { position: relative; z-index: 1; }
@@ -47,7 +45,7 @@ body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-col
 .blob-3 { width: 50vw; height: 50vw; background: var(--blob-3); top: 30%; left: 30%; animation-delay: -10s; }
 @keyframes float { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(30px,30px) scale(1.1); } }
 
-/* --- ПАНЕЛІ (Old Glass + New Radius) --- */
+/* panels */
 .glass-panel {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
@@ -55,17 +53,15 @@ body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-col
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   
-  /* НОВА ФОРМА (з iOS стилю) */
   border-radius: 20px; 
 }
 
-/* --- КНОПКИ (Old Colors + New Shape) --- */
+/* buttons */
 .btn {
   border: none; padding: 12px 32px;
   font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
   cursor: pointer; 
   
-  /* НОВА ФОРМА */
   transform: skewX(-5deg); 
   border-radius: 10px;
   
@@ -91,22 +87,22 @@ body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-col
 
 .btn-icon { 
   background: transparent; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; padding: 5px; transition: 0.2s; 
-  border-radius: 10px; /* Нове заокруглення */
+  border-radius: 10px;
 }
 .btn-icon:hover { transform: scale(1.1); color: var(--accent); background: rgba(255,255,255,0.05); }
 
-/* --- INPUTS (New Shape, Old Colors) --- */
+/* inputs */
 input {
   width: 100%; padding: 14px; 
   background: rgba(0,0,0,0.2); 
   border: 1px solid rgba(255,255,255,0.1); 
   color: #fff; font-weight: 600; 
-  border-radius: 10px; /* Нове заокруглення */
+  border-radius: 10px;
   transition: all 0.3s;
 }
 input:focus { border-color: var(--accent); background: rgba(0,0,0,0.4); outline: none; }
 
-/* --- TOGGLES & BADGES (Old Style) --- */
+/* toggles and badges */
 .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255, 255, 255, 0.1); border-radius: 34px; transition: .4s; border: 1px solid var(--glass-border); }
@@ -121,7 +117,7 @@ input:checked + .slider:before { transform: translateX(24px); background: #000; 
 .rank-bronze { background: linear-gradient(120deg, #8c5837, #d9a071, #8c5837, #d9a071, #69381e); background-size: 200% auto; color: #3e220e; text-shadow: 0 1px 0 rgba(255,255,255,0.3); box-shadow: 0 0 15px rgba(205, 127, 50, 0.5); animation: shimmer 5s linear infinite; border: 1px solid #cd7f32; }
 .rank-elite { background: rgba(66, 184, 131, 0.2); border: 1px solid #42b883; color: #42b883; box-shadow: 0 0 10px rgba(66, 184, 131, 0.2); }
 
-/* --- UTILS --- */
+/* utils */
 .text-green { color: var(--accent); } 
 .text-red { color: var(--danger); } 
 .text-gray { color: var(--text-muted); }

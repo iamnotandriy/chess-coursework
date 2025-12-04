@@ -218,10 +218,10 @@ onUnmounted(() => socket.disconnect());
 </template>
 
 <style scoped>
-/* SIDEBAR */
+
 .sidebar { 
   width: 380px; display: flex; flex-direction: column; gap: 20px; padding: 30px; border-radius: 12px;
-  /* DARKER BACKGROUND FOR CONTRAST */
+
   background: rgba(15, 15, 20, 0.85); 
   backdrop-filter: blur(30px); border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: -10px 0 40px rgba(0,0,0,0.5);
 }
@@ -230,7 +230,7 @@ onUnmounted(() => socket.disconnect());
 .p-stats-row { display: flex; align-items: center; gap: 8px; }
 .rank-badge.small { font-size: 0.6rem; padding: 2px 5px; margin-left: 0; }
 
-/* SIDE PROFILE */
+/* side profile */
 .side-panel-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99; overflow: hidden; }
 .side-profile { position: absolute; top: 0; right: 0; width: 400px; height: 100%; padding: 40px; border-left: 1px solid var(--glass-border); background: rgba(10, 10, 12, 0.95); backdrop-filter: blur(40px); display: flex; flex-direction: column; box-shadow: -10px 0 50px rgba(0,0,0,0.8); }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px; }
@@ -246,7 +246,7 @@ onUnmounted(() => socket.disconnect());
 .slide-in-enter-active, .slide-in-leave-active { transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); }
 .slide-in-enter-from, .slide-in-leave-to { transform: translateX(100%); }
 
-/* COMMON STYLES */
+/* common */
 .mode-tag { font-size: 0.8rem; background: var(--danger); padding: 2px 8px; border-radius: 4px; margin-left: 10px; color: #fff; vertical-align: middle; }
 .avatar-img { width: 50px; height: 50px; border-radius: 4px; object-fit: cover; clip-path: polygon(10% 0, 100% 0, 100% 90%, 90% 100%, 0 100%, 0 10%); border: 1px solid var(--accent); }
 .big-avatar-img { width: 120px; height: 120px; border-radius: 12px; object-fit: cover; border: 3px solid var(--accent); box-shadow: 0 0 30px rgba(0,0,0,0.5); }
