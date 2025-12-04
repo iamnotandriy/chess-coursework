@@ -8,13 +8,16 @@ const User = require('./models/User');
 
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: '*' }));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-mongoose.connect('mongodb://127.0.0.1:27017/chess-master')
-  .then(() => console.log('✅ MONGODB CONNECTED'))
-  .catch(err => console.error('❌ MONGODB ERROR:', err));
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/chess-plus';
+
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('MONGODB CONNECTED'))
+  .catch(err => console.error('MONGODB ERROR:', err));
 
 app.use('/api/auth', authRoutes);
 
@@ -183,4 +186,5 @@ async function updateRatings(winnerId, loserId, draw = false) {
   } catch (e) { console.error(e); }
 }
 
-server.listen(3001, () => console.log('SERVER RUNNING PORT 3001'));
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => console.log(`SERVER RUNNING PORT ${PORT}`));

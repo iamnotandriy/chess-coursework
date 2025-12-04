@@ -1,5 +1,4 @@
 <script setup>
-
 </script>
 
 <template>
@@ -10,7 +9,8 @@
 body {
   margin: 0;
   padding: 0;
-  background: #1a1a1a;
-  color: white;
+  background-color: #050505;
+  color: #eeeeee;
+  overflow: hidden;
 }
 </style>

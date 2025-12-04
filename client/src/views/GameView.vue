@@ -18,7 +18,11 @@ const getUserId = () => {
   return id;
 };
 const userId = getUserId();
-const socket = io('http://localhost:3001', { query: { userId: userId } });
+const SERVER_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3001' 
+  : 'https://chess-api-18o3.onrender.com';
+  
+const socket = io(SERVER_URL, { query: { userId: userId } });
 
 const status = ref('Welcome');
 const isSearching = ref(false);
