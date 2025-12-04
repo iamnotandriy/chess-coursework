@@ -128,3 +128,38 @@ input:checked + .slider:before { transform: translateX(24px); background: #000; 
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+@media (max-width: 768px) {
+  body { overflow-y: auto; } 
+  .layout, .home-layout { height: auto; min-height: 100vh; overflow-y: auto; }
+  
+  .auth-card, .profile-card, .settings-modal, .lobby-card {
+    width: 90% !important;
+    min-width: auto !important;
+    padding: 25px 20px !important;
+  }
+
+  .lobby-card.lobby-wide {
+    flex-direction: column;
+    min-width: auto !important;
+    width: 95% !important;
+  }
+  .lobby-left, .lobby-right {
+    width: 100%;
+    border-left: none;
+    padding-left: 0;
+    min-height: auto;
+    height: auto;
+  }
+  .lobby-right {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding-top: 20px;
+    margin-top: 20px;
+  }
+  
+  .navbar { padding: 0 15px; height: 60px; }
+  .logo { font-size: 1.1rem; }
+  .btn { padding: 10px 20px; font-size: 0.8rem; }
+  .user-badge { top: 15px; right: 15px; padding: 5px 10px; }
+  .u-name { display: none; }
+}
