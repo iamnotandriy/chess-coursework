@@ -1,6 +1,6 @@
 const SERVER_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:3001' 
-  : 'https://chess-api-18o3.onrender.com';
+  : 'https://chess-api-18o3.onrender.com'; 
 
 const API_URL = `${SERVER_URL}/api/auth`;
 
@@ -17,7 +17,6 @@ export default {
     localStorage.setItem('chess_user_id', data.userId);
     return data;
   },
-  
   async register(username, password) {
     const res = await fetch(`${API_URL}/register`, {
       method: 'POST',
@@ -28,7 +27,6 @@ export default {
     if (!res.ok) throw new Error(data.message);
     return data;
   },
-
   async getLatestStats() {
     const id = localStorage.getItem('chess_user_id');
     if (!id) return null;
@@ -38,7 +36,6 @@ export default {
       return await res.json();
     } catch (e) { return null; }
   },
-
   async updateProfile(userId, profileData) {
     const res = await fetch(`${API_URL}/profile/${userId}`, {
       method: 'PUT',
@@ -49,13 +46,11 @@ export default {
     if (!res.ok) throw new Error(data.message);
     return data;
   },
-
   async getPublicProfile(userId) {
     const res = await fetch(`${API_URL}/stats/${userId}`);
     if (!res.ok) throw new Error('Failed to load profile');
     return await res.json();
   },
-
   async getLeaderboard() {
     try {
       const res = await fetch(`${API_URL}/leaderboard`);
@@ -63,12 +58,10 @@ export default {
       return await res.json();
     } catch (e) { return []; }
   },
-
   logout() {
     localStorage.removeItem('chess_token');
     localStorage.removeItem('chess_user_id');
   },
-
   getUser() {
     const id = localStorage.getItem('chess_user_id');
     return id ? { id } : null; 

@@ -2,36 +2,29 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import authService from '../services/auth';
-import { SERVER_URL } from '../config';
 
 const router = useRouter();
 const activeCategory = ref('play');
 const currentUser = ref(null);
 const leaderboard = ref([]);
-const socket = io(SERVER_URL, { query: { userId: userId } });
 
-// ui states
 const showAuthModal = ref(false);
 const showProfileModal = ref(false);
 const showLeaderboardModal = ref(false);
 const showPublicProfile = ref(false);
 const showSettings = ref(false);
 const isLoginMode = ref(true);
-const isLoading = ref(false);
-
-// forms
 const authForm = ref({ username: '', password: '', confirm: '' });
 const authError = ref('');
 const profileForm = ref({ bio: '', isPrivate: false, avatar: '' });
 const selectedUser = ref(null);
+const isLoading = ref(false);
 
-// settings
 const useGlassEffects = ref(true);
 const boardScale = ref(80);
 const themes = [{id:'default',name:'MINT'},{id:'blue',name:'CYBER'},{id:'gold',name:'GOLD'}];
 const currentTheme = ref('default');
 
-// helpers
 const getRankClass = (rank) => {
   if (rank === 1) return 'rank-gold';
   if (rank === 2) return 'rank-silver';
@@ -59,7 +52,6 @@ const loadUser = async () => {
   } else currentUser.value = null;
 };
 
-// actions
 const handleAuth = async () => {
   authError.value = '';
   if(!authForm.value.username || !authForm.value.password) return authError.value = 'Fill all fields';
@@ -91,11 +83,7 @@ const saveProfile = async () => {
 const logout = () => { authService.logout(); currentUser.value = null; showProfileModal.value = false; };
 
 const openUserProfile = async (userId) => {
-  if (currentUser.value && userId === currentUser.value._id) { 
-    showLeaderboardModal.value = false;
-    showProfileModal.value = true; 
-    return; 
-  }
+  if (currentUser.value && userId === currentUser.value._id) { showLeaderboardModal.value = false; showProfileModal.value = true; return; }
   try {
     const data = await authService.getPublicProfile(userId);
     selectedUser.value = data;
@@ -113,7 +101,6 @@ const goToGame = (mode) => {
   router.push(`/game?mode=${mode}`);
 };
 
-// main menu
 const menuItems = [
   { id: 'play', label: 'PLAY', desc: 'START JOURNEY', subItems: [
     { label: 'RANKED MATCH', desc: 'COMPETE FOR ELO', action: () => goToGame('standard') },
@@ -154,16 +141,8 @@ const setActive = (id) => { activeCategory.value = id; };
           <TransitionGroup name="slide-fade"><div v-for="sub in menuItems.find(i=>i.id===activeCategory).subItems" :key="sub.label" class="sub-item" @click="sub.action"><span class="sub-label">{{sub.label}}</span><span class="sub-desc">{{sub.desc}}</span></div></TransitionGroup>
         </div>
       </div>
-      <div class="footer">v1.2.0 Stable</div>
+      <div class="footer">v1.3 Release</div>
     </div>
-
-    <Transition name="fade"><div v-if="showAuthModal" class="auth-overlay" @click.self="showAuthModal = false"><div class="auth-card glass-panel center-content"><h2>{{ isLoginMode ? 'WELCOME' : 'REGISTER' }}</h2><div class="form-body"><div class="input-group"><label>USERNAME</label><input v-model="authForm.username"></div><div class="input-group"><label>PASSWORD</label><input v-model="authForm.password" type="password"></div><div class="input-group" v-if="!isLoginMode"><label>CONFIRM</label><input v-model="authForm.confirm" type="password"></div></div><div v-if="authError" class="error-msg">{{ authError }}</div><button class="btn btn-primary big mt-20" @click="handleAuth" :disabled="isLoading"><span>{{ isLoading ? '...' : (isLoginMode ? 'LOGIN' : 'REGISTER') }}</span></button><p class="switch-mode" @click="isLoginMode = !isLoginMode">{{ isLoginMode ? "Create account" : "Login" }}</p></div></div></Transition>
-
-    <Transition name="fade"><div v-if="showProfileModal" class="auth-overlay" @click.self="showProfileModal = false"><div class="profile-card glass-panel"><div class="profile-header"><div class="avatar-upload"><img v-if="profileForm.avatar" :src="profileForm.avatar" class="big-avatar-img"><div v-else class="big-avatar"></div><label class="upload-btn">📷 <input type="file" @change="handleFileChange" accept="image/*" hidden></label></div><div class="profile-names"><h3>{{ currentUser?.username }}</h3><div class="badges-row"><span class="elo-tag">{{ currentUser?.rating }} ELO</span><span v-if="currentUser?.rank" class="rank-badge" :class="getRankClass(currentUser.rank)">#{{ currentUser.rank }}</span></div><span class="peak-tag">PEAK: {{ currentUser?.highestRating || currentUser?.rating }}</span></div></div><div class="edit-section"><div class="input-group"><label>BIO</label><input v-model="profileForm.bio" placeholder="..."></div><div class="setting-row mt-20"><label>Private Profile</label><label class="switch"><input type="checkbox" v-model="profileForm.isPrivate"><span class="slider"></span></label></div></div><div class="stats-grid"><div class="stat-box"><span class="stat-val text-green">{{ currentUser?.wins }}</span><span class="stat-label">WINS</span></div><div class="stat-box"><span class="stat-val text-gray">{{ currentUser?.draws || 0 }}</span><span class="stat-label">DRAWS</span></div><div class="stat-box"><span class="stat-val text-red">{{ (currentUser?.matches - currentUser?.wins - (currentUser?.draws||0)) }}</span><span class="stat-label">LOSSES</span></div><div class="stat-box"><span class="stat-val">{{ currentUser?.matches }}</span><span class="stat-label">TOTAL</span></div></div><div class="profile-actions"><button class="btn btn-primary" @click="saveProfile" :disabled="isLoading"><span>SAVE</span></button><button class="btn btn-danger" @click="showProfileModal = false"><span>CLOSE</span></button></div></div></div></Transition>
-
-    <Transition name="fade"><div v-if="showSettings" class="auth-overlay" @click.self="showSettings = false"><div class="settings-modal glass-panel"><div class="modal-header"><h3>SETTINGS</h3><button class="btn-icon" @click="showSettings=false">✕</button></div><div class="setting-row"><label>Glass Effects</label><label class="switch"><input type="checkbox" :checked="useGlassEffects" @change="toggleGlass($event.target.checked)"><span class="slider"></span></label></div><div class="setting-group"><label>Theme</label><div class="theme-grid"><button v-for="t in themes" :key="t.id" class="theme-btn" :class="{active:currentTheme===t.id}" @click="setTheme(t.id)">{{t.name}}</button></div></div></div></div></Transition>
-
-    <Transition name="fade"><div v-if="showPublicProfile && selectedUser" class="auth-overlay" @click.self="showPublicProfile = false"><div class="profile-card glass-panel"><div class="profile-header"><img v-if="selectedUser.avatar" :src="selectedUser.avatar" class="big-avatar-img"><div v-else class="big-avatar"></div><div class="profile-names"><h3>{{ selectedUser.username }}</h3><div class="badges-row"><span class="elo-tag">{{ selectedUser.rating }} ELO</span><span v-if="selectedUser.rank" class="rank-badge" :class="getRankClass(selectedUser.rank)">#{{ selectedUser.rank }}</span></div></div></div><p class="bio-text">{{ selectedUser.bio || 'No bio provided.' }}</p><div class="stats-grid"><div class="stat-box"><span class="stat-val text-green">{{ selectedUser.wins }}</span><span class="stat-label">WINS</span></div><div class="stat-box"><span class="stat-val text-gray">{{ selectedUser.draws || 0 }}</span><span class="stat-label">DRAWS</span></div><div class="stat-box"><span class="stat-val">{{ selectedUser.matches }}</span><span class="stat-label">GAMES</span></div></div><div class="profile-actions"><button class="btn btn-danger" @click="showPublicProfile = false"><span>CLOSE</span></button></div></div></div></Transition>
 
     <Transition name="fade"><div v-if="showLeaderboardModal" class="auth-overlay" @click.self="showLeaderboardModal = false">
       <div class="profile-card glass-panel lb-modal-card">
@@ -182,33 +161,15 @@ const setActive = (id) => { activeCategory.value = id; };
       </div>
     </div></Transition>
 
+    <Transition name="fade"><div v-if="showAuthModal" class="auth-overlay" @click.self="showAuthModal = false"><div class="auth-card glass-panel center-content"><h2>{{ isLoginMode ? 'WELCOME' : 'REGISTER' }}</h2><div class="form-body"><div class="input-group"><label>USERNAME</label><input v-model="authForm.username"></div><div class="input-group"><label>PASSWORD</label><input v-model="authForm.password" type="password"></div><div class="input-group" v-if="!isLoginMode"><label>CONFIRM</label><input v-model="authForm.confirm" type="password"></div></div><div v-if="authError" class="error-msg">{{ authError }}</div><button class="btn btn-primary big mt-20" @click="handleAuth" :disabled="isLoading"><span>{{ isLoading ? '...' : (isLoginMode ? 'LOGIN' : 'REGISTER') }}</span></button><p class="switch-mode" @click="isLoginMode = !isLoginMode">{{ isLoginMode ? "Create account" : "Login" }}</p></div></div></Transition>
+    <Transition name="fade"><div v-if="showProfileModal" class="auth-overlay" @click.self="showProfileModal = false"><div class="profile-card glass-panel"><div class="profile-header"><div class="avatar-upload"><img v-if="profileForm.avatar" :src="profileForm.avatar" class="big-avatar-img"><div v-else class="big-avatar"></div><label class="upload-btn">📷 <input type="file" @change="handleFileChange" accept="image/*" hidden></label></div><div class="profile-names"><h3>{{ currentUser?.username }}</h3><div class="badges-row"><span class="elo-tag">{{ currentUser?.rating }} ELO</span><span v-if="currentUser?.rank" class="rank-badge" :class="getRankClass(currentUser.rank)">#{{ currentUser.rank }}</span></div><span class="peak-tag">PEAK: {{ currentUser?.highestRating || currentUser?.rating }}</span></div></div><div class="edit-section"><div class="input-group"><label>BIO</label><input v-model="profileForm.bio" placeholder="..."></div><div class="setting-row mt-20"><label>Private Profile</label><label class="switch"><input type="checkbox" v-model="profileForm.isPrivate"><span class="slider"></span></label></div></div><div class="stats-grid"><div class="stat-box"><span class="stat-val text-green">{{ currentUser?.wins }}</span><span class="stat-label">WINS</span></div><div class="stat-box"><span class="stat-val text-gray">{{ currentUser?.draws || 0 }}</span><span class="stat-label">DRAWS</span></div><div class="stat-box"><span class="stat-val text-red">{{ (currentUser?.matches - currentUser?.wins - (currentUser?.draws||0)) }}</span><span class="stat-label">LOSSES</span></div><div class="stat-box"><span class="stat-val">{{ currentUser?.matches }}</span><span class="stat-label">TOTAL</span></div></div><div class="profile-actions"><button class="btn btn-primary" @click="saveProfile" :disabled="isLoading"><span>SAVE</span></button><button class="btn btn-danger" @click="showProfileModal = false"><span>CLOSE</span></button></div></div></div></Transition>
+    <Transition name="fade"><div v-if="showPublicProfile && selectedUser" class="auth-overlay" @click.self="showPublicProfile = false"><div class="profile-card glass-panel"><div class="profile-header"><img v-if="selectedUser.avatar" :src="selectedUser.avatar" class="big-avatar-img"><div v-else class="big-avatar"></div><div class="profile-names"><h3>{{ selectedUser.username }}</h3><div class="badges-row"><span class="elo-tag">{{ selectedUser.rating }} ELO</span><span v-if="selectedUser.rank" class="rank-badge" :class="getRankClass(selectedUser.rank)">#{{ selectedUser.rank }}</span></div></div></div><p class="bio-text">{{ selectedUser.bio || 'No bio provided.' }}</p><div class="stats-grid"><div class="stat-box"><span class="stat-val text-green">{{ selectedUser.wins }}</span><span class="stat-label">WINS</span></div><div class="stat-box"><span class="stat-val text-gray">{{ selectedUser.draws || 0 }}</span><span class="stat-label">DRAWS</span></div><div class="stat-box"><span class="stat-val">{{ selectedUser.matches }}</span><span class="stat-label">GAMES</span></div></div><div class="profile-actions"><button class="btn btn-danger" @click="showPublicProfile = false"><span>CLOSE</span></button></div></div></div></Transition>
+    <Transition name="fade"><div v-if="showSettings" class="auth-overlay" @click.self="showSettings = false"><div class="settings-modal glass-panel"><div class="modal-header"><h3>SETTINGS</h3><button class="btn-icon" @click="showSettings=false">✕</button></div><div class="setting-row"><label>Glass Effects</label><label class="switch"><input type="checkbox" :checked="useGlassEffects" @change="toggleGlass($event.target.checked)"><span class="slider"></span></label></div><div class="setting-group"><label>Size: {{boardScale}}%</label><input type="range" min="50" max="100" :value="boardScale" @input="updateScale($event.target.value)"></div><div class="setting-group"><label>Theme</label><div class="theme-grid"><button v-for="t in themes" :key="t.id" class="theme-btn" :class="{active:currentTheme===t.id}" @click="setTheme(t.id)">{{t.name}}</button></div></div></div></div></Transition>
   </div>
 </template>
 
 <style scoped>
-/* leaderboard modal styles */
-.lb-modal-card { height: 600px; }
-.lb-list-modal { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 5px; width: 100%; }
-.lb-row { display: flex; align-items: center; padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); transition: 0.2s; text-align: left; }
-.lb-row:hover { background: rgba(255,255,255,0.08); transform: translateX(5px); }
-.lb-rank {
-  width: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 0.8rem;
-  color: #666;
-  flex-shrink: 0;
-}
-.lb-user { flex: 1; display: flex; align-items: center; gap: 15px; }
-.mini-av { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid var(--accent); }
-.mini-av-ph { width: 40px; height: 40px; border-radius: 8px; background: #333; }
-.lb-names { display: flex; flex-direction: column; }
-.lb-name { font-weight: 700; font-size: 1rem; line-height: 1.2; }
-.lb-rating { font-weight: 500; color: var(--accent); font-size: 0.8rem; }
-
-/* standard styles */
+/* styles */
 .home-layout { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; position: relative; }
 .menu-center-wrapper { text-align: center; display: flex; flex-direction: column; align-items: center; z-index: 10; }
 .game-title { font-size: 4rem; font-weight: 900; letter-spacing: -2px; margin-bottom: 40px; text-shadow: 0 10px 30px rgba(0,0,0,0.5); }
@@ -224,6 +185,21 @@ const setActive = (id) => { activeCategory.value = id; };
 .sub-item:hover { border-left-color: var(--accent); background: rgba(255,255,255,0.05); }
 .sub-label { display: block; font-weight: 700; font-size: 1.2rem; }
 .sub-desc { display: block; font-size: 0.8rem; color: var(--text-muted); }
+
+/* leaderboard modal */
+.lb-modal-card { height: 600px; }
+.lb-list-modal { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 5px; width: 100%; }
+.lb-row { display: flex; align-items: center; padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); transition: 0.2s; text-align: left; }
+.lb-row:hover { background: rgba(255,255,255,0.08); transform: translateX(5px); }
+.lb-rank { width: 40px; font-weight: 900; font-size: 0.9rem; color: #888; text-align: center; }
+.lb-user { flex: 1; display: flex; align-items: center; gap: 15px; }
+.mini-av { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid var(--accent); }
+.mini-av-ph { width: 40px; height: 40px; border-radius: 8px; background: #333; }
+.lb-names { display: flex; flex-direction: column; }
+.lb-name { font-weight: 700; font-size: 1rem; line-height: 1.2; }
+.lb-rating { font-weight: 500; color: var(--accent); font-size: 0.8rem; }
+
+/* user badge */
 .user-badge { position: absolute; top: 30px; right: 30px; display: flex; align-items: center; gap: 15px; padding: 10px 20px; border-radius: 4px; z-index: 50; transform: skewX(-10deg); cursor: pointer; }
 .user-badge:hover { background: rgba(255,255,255,0.1); }
 .u-avatar { width: 40px; height: 40px; background: var(--accent); border-radius: 4px; transform: skewX(10deg); }
@@ -233,7 +209,7 @@ const setActive = (id) => { activeCategory.value = id; };
 .u-rating { font-size: 0.8rem; color: var(--accent); display: block; }
 .login-trigger { border: 1px solid var(--accent); color: var(--accent); }
 .auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
-.auth-card, .profile-card, .settings-modal { padding: 40px; width: 480px; border-radius: 16px; display: flex; flex-direction: column; gap: 20px; text-align: center; transform: skewX(-2deg); }
+.auth-card, .profile-card, .settings-modal { padding: 40px; width: 450px; border-radius: 16px; display: flex; flex-direction: column; gap: 20px; text-align: center; transform: skewX(-2deg); }
 .profile-card { width: 550px; }
 .form-body { display: flex; flex-direction: column; gap: 15px; width: 100%; }
 .input-group { width: 100%; text-align: center; margin-bottom: 5px; }
@@ -264,26 +240,10 @@ const setActive = (id) => { activeCategory.value = id; };
 .peak-tag { font-size: 0.7rem; color: #888; display: block; margin-top: 5px; }
 .badges-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .badges-row-mini { display: flex; align-items: center; gap: 5px; }
-.rank-badge {
-  font-size: 0.7rem;
-  font-weight: 900;
-  padding: 3px 0;
-  width: 32px;
-  text-align: center;
-  border-radius: 4px;
-  margin: 0;
-  text-transform: uppercase;
-  display: inline-block;
-  background: rgba(255,255,255,0.1);
-  color: #ccc;
-}
+.rank-badge.small { font-size: 0.6rem; padding: 2px 5px; margin-left: 0; }
 .profile-actions { display: flex; justify-content: center; gap: 30px; margin-top: 15px; }
 .bio-text { font-style: italic; color: #ddd; line-height: 1.5; margin-bottom: 15px; }
-.rank-text {
-  color: #888;
-  font-family: monospace;
-  font-size: 0.9rem;
-}
+.rank-text { color: #888; font-weight: bold; }
 .clickable { cursor: pointer; }
 .clickable:hover { background: rgba(255,255,255,0.1); }
 

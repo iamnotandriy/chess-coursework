@@ -8,6 +8,7 @@ const User = require('./models/User');
 
 const app = express();
 
+// allow connections from any site
 app.use(cors({ origin: '*' }));
 
 app.use(express.json({ limit: '50mb' }));
@@ -24,15 +25,16 @@ app.use('/api/auth', authRoutes);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
+// game state
 const games = {}; 
 const users = {}; 
 const timeouts = {};
 const queues = { standard: null, casual: null };
 
+// socket logic
 io.on('connection', (socket) => {
   const userId = socket.handshake.query.userId;
   if (!userId) { socket.disconnect(); return; }
-
   console.log(`Connected: ${userId}`);
 
   // reconnect
@@ -41,21 +43,13 @@ io.on('connection', (socket) => {
     const roomId = d.roomId;
     if (games[roomId]) {
       if (timeouts[userId]) { clearTimeout(timeouts[userId]); delete timeouts[userId]; }
-      
-      if (d.lastDisconnect) {
-        d.timeLeft -= (Date.now() - d.lastDisconnect);
-        d.lastDisconnect = null;
-      }
-
+      if (d.lastDisconnect) { d.timeLeft -= (Date.now() - d.lastDisconnect); d.lastDisconnect = null; }
       if (d.timeLeft <= 0) { handleTimeout(userId, roomId); return; }
 
       socket.join(roomId);
       users[userId].socketId = socket.id;
-
       socket.emit('game_start', { 
-        color: d.color, roomId, 
-        fen: games[roomId].fen, history: games[roomId].history,
-        mode: games[roomId].mode,
+        color: d.color, roomId, fen: games[roomId].fen, history: games[roomId].history, mode: games[roomId].mode,
         opponent: games[roomId].players[d.color === 'white' ? 'black' : 'white']
       });
       socket.to(roomId).emit('opponent_reconnected');
@@ -71,7 +65,6 @@ io.on('connection', (socket) => {
       const opponent = queues[mode];
       queues[mode] = null;
       const roomId = opponent.userId + '#' + userId;
-
       const p1Data = await getUserData(opponent.userId);
       const p2Data = await getUserData(userId);
 
@@ -79,9 +72,7 @@ io.on('connection', (socket) => {
       socket.join(roomId);
 
       games[roomId] = { 
-        white: opponent.userId, black: userId, 
-        fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 
-        history: [], mode,
+        white: opponent.userId, black: userId, fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', history: [], mode,
         players: { white: p1Data, black: p2Data }
       };
 
@@ -90,7 +81,6 @@ io.on('connection', (socket) => {
 
       io.to(opponent.socket.id).emit('game_start', { color: 'white', roomId, opponent: p2Data, mode });
       io.to(socket.id).emit('game_start', { color: 'black', roomId, opponent: p1Data, mode });
-
     } else {
       queues[mode] = { socket, userId };
       socket.emit('waiting', `Searching ${mode}...`);
@@ -106,13 +96,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('cancel_search', () => {
-    for (const m in queues) if (queues[m]?.userId === userId) queues[m] = null;
-  });
+  socket.on('cancel_search', () => { for (const m in queues) if (queues[m]?.userId === userId) queues[m] = null; });
 
   socket.on('disconnect', () => {
     for (const m in queues) if (queues[m]?.userId === userId) queues[m] = null;
-
     if (users[userId]) {
       const { roomId } = users[userId];
       if (games[roomId]) {
@@ -130,14 +117,8 @@ async function getUserData(id) {
   try {
     const u = await User.findById(id);
     if (!u) return { id, username: 'Unknown', rating: 1200 };
-    if (u.isPrivate) {
-      return { id: u._id, username: 'Anonymous', rating: u.rating, avatar: '', bio: 'Private', isPrivate: true };
-    }
-    return { 
-      id: u._id, username: u.username, rating: u.rating, 
-      avatar: u.avatar, bio: u.bio, 
-      wins: u.wins, draws: u.draws || 0, matches: u.matches, highestRating: u.highestRating || u.rating
-    };
+    if (u.isPrivate) return { id: u._id, username: 'Anonymous', rating: u.rating, avatar: '', bio: 'Private', isPrivate: true };
+    return { id: u._id, username: u.username, rating: u.rating, avatar: u.avatar, bio: u.bio, wins: u.wins, draws: u.draws||0, matches: u.matches, highestRating: u.highestRating||u.rating };
   } catch (e) { return { username: 'Error', rating: 0 }; }
 }
 
@@ -146,11 +127,9 @@ async function handleTimeout(userId, roomId) {
   const loserColor = users[userId].color;
   const winnerColor = loserColor === 'white' ? 'black' : 'white';
   const winnerId = games[roomId][winnerColor === 'white' ? 'white' : 'black'];
-
   io.to(roomId).emit('game_over', { winner: winnerColor, reason: 'Opponent disconnected' });
   if (games[roomId].mode === 'standard') await updateRatings(winnerId, userId);
-  delete games[roomId];
-  delete users[userId]; 
+  delete games[roomId]; delete users[userId]; 
 }
 
 async function updateRatings(winnerId, loserId, draw = false) {
@@ -159,29 +138,17 @@ async function updateRatings(winnerId, loserId, draw = false) {
     const winner = await User.findById(winnerId);
     const loser = await User.findById(loserId);
     if (!winner || !loser) return;
-
     const K = 32;
     const expectedWinner = 1 / (1 + Math.pow(10, (loser.rating - winner.rating) / 400));
     const expectedLoser = 1 / (1 + Math.pow(10, (winner.rating - loser.rating) / 400));
-
     const actualScoreWinner = draw ? 0.5 : 1;
     winner.rating = Math.round(winner.rating + K * (actualScoreWinner - expectedWinner));
-    
     const actualScoreLoser = draw ? 0.5 : 0;
     loser.rating = Math.round(loser.rating + K * (actualScoreLoser - expectedLoser));
-
-    // update records
     if (winner.rating > (winner.highestRating || 0)) winner.highestRating = winner.rating;
     if (loser.rating > (loser.highestRating || 0)) loser.highestRating = loser.rating;
-
     winner.matches++; loser.matches++;
-    if (draw) {
-      winner.draws = (winner.draws || 0) + 1;
-      loser.draws = (loser.draws || 0) + 1;
-    } else {
-      winner.wins++;
-    }
-    
+    if (draw) { winner.draws = (winner.draws || 0) + 1; loser.draws = (loser.draws || 0) + 1; } else { winner.wins++; }
     await winner.save(); await loser.save();
   } catch (e) { console.error(e); }
 }

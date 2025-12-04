@@ -10,6 +10,8 @@ const router = useRouter();
 const route = useRoute();
 const game = new Chess();
 
+const SERVER_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://chess-api-18o3.onrender.com';
+
 const getUserId = () => {
   const user = authService.getUser();
   if (user && user.id) return user.id;
@@ -18,10 +20,6 @@ const getUserId = () => {
   return id;
 };
 const userId = getUserId();
-const SERVER_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:3001' 
-  : 'https://chess-api-18o3.onrender.com';
-  
 const socket = io(SERVER_URL, { query: { userId: userId } });
 
 const status = ref('Welcome');
@@ -178,7 +176,7 @@ onUnmounted(() => socket.disconnect());
   <div class="layout">
     <div class="liquid-background"><div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div></div>
     <header class="navbar glass-panel">
-      <div class="logo">CHESS <span class="accent-text">MASTER</span> <span v-if="gameMode!=='standard'" class="mode-tag">{{gameMode.toUpperCase()}}</span></div>
+      <div class="logo">CHESS <span class="accent-text">PLUS</span> <span v-if="gameMode!=='standard'" class="mode-tag">{{gameMode.toUpperCase()}}</span></div>
       <div class="actions"><button class="btn-icon" @click="showSettings=true"><span>⚙️</span></button><button class="btn btn-danger" @click="leaveGame"><span>EXIT</span></button></div>
     </header>
 
