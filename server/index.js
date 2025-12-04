@@ -59,6 +59,11 @@ io.on('connection', (socket) => {
   // matchmaking
   socket.on('find_game', async (data) => {
     const mode = data?.mode || 'standard';
+    
+  if (mode === 'standard' && userId.startsWith('guest_')) {
+    return; 
+    }
+
     if (queues[mode] && queues[mode].userId === userId) return;
 
     if (queues[mode]) {

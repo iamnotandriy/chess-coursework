@@ -97,8 +97,8 @@ const setTheme = (t) => { currentTheme.value = t; localStorage.setItem('chess_th
 const applySettings = () => { document.body.classList.toggle('no-glass', !useGlassEffects.value); const t = localStorage.getItem('chess_theme'); if(t) document.documentElement.setAttribute('data-theme', t); };
 
 const goToGame = (mode) => {
-  if (mode === 'ranked' && !currentUser.value) { isLoginMode.value = true; showAuthModal.value = true; return; }
-  router.push(`/game?mode=${mode}`);
+  if (mode === 'standard' && !currentUser.value) { isLoginMode.value = true; showAuthModal.value = true; return; }
+  router.push(`/game?mode=${mode}&auto=true`);
 };
 
 const menuItems = [
