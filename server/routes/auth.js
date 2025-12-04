@@ -6,6 +6,7 @@ const User = require('../models/User');
 
 const JWT_SECRET = 'chess_secret_key_2025';
 
+// REGISTER
 router.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -22,6 +23,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// LOGIN
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -33,39 +35,36 @@ router.post('/login', async (req, res) => {
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '24h' });
 
-    res.json({ 
-      token, 
-      userId: user._id, 
-      username: user.username,
-      rating: user.rating 
-    });
+    res.json({ token, userId: user._id, username: user.username, rating: user.rating });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
 });
 
+// GET PROFILE + RANK CALCULATION
 router.get('/stats/:userId', async (req, res) => {
   try {
     const user = await User.findById(req.params.userId).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     
-    /*
-    if (user.isPrivate) {
-       return res.json({ username: 'Anonymous', rating: user.rating, isPrivate: true });
-    }
-    */
-    
-    res.json(user);
+    // Рахуємо ранг (місце в топі)
+    const higherRankedUsers = await User.countDocuments({ rating: { $gt: user.rating } });
+    const rank = higherRankedUsers + 1;
+
+    const userData = user.toObject();
+    userData.rank = rank; // Додаємо поле rank у відповідь
+
+    res.json(userData);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
 });
 
+// UPDATE PROFILE
 router.put('/profile/:userId', async (req, res) => {
   try {
     const { bio, avatar, isPrivate } = req.body;
     const user = await User.findById(req.params.userId);
-    
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (bio !== undefined) user.bio = bio;
@@ -73,10 +72,21 @@ router.put('/profile/:userId', async (req, res) => {
     if (isPrivate !== undefined) user.isPrivate = isPrivate;
 
     await user.save();
-    
-    res.json({ message: 'Profile updated', user });
+    res.json({ message: 'Profile updated' });
   } catch (error) {
-    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/leaderboard', async (req, res) => {
+  try {
+    const topUsers = await User.find({})
+      .sort({ rating: -1 })
+      .limit(10)
+      .select('username rating avatar isPrivate wins matches');
+    
+    res.json(topUsers);
+  } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
 });

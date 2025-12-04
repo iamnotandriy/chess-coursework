@@ -8,7 +8,6 @@ const User = require('./models/User');
 
 const app = express();
 
-// avatar upload limit
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -22,62 +21,47 @@ app.use('/api/auth', authRoutes);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-// GAME STATE
 const games = {}; 
 const users = {}; 
 const timeouts = {};
+const queues = { standard: null, casual: null };
 
-// QUEUES
-const queues = {
-  standard: null, // Ranked
-  casual: null    // casual
-};
-
-// socket.io logic
 io.on('connection', (socket) => {
   const userId = socket.handshake.query.userId;
   if (!userId) { socket.disconnect(); return; }
 
   console.log(`Connected: ${userId}`);
 
-  // reconnect
+  // Reconnect
   if (users[userId]) {
-    const userData = users[userId];
-    const roomId = userData.roomId;
-    
+    const d = users[userId];
+    const roomId = d.roomId;
     if (games[roomId]) {
       if (timeouts[userId]) { clearTimeout(timeouts[userId]); delete timeouts[userId]; }
-
-      if (userData.lastDisconnect) {
-        const timeAway = Date.now() - userData.lastDisconnect;
-        userData.timeLeft -= timeAway;
-        userData.lastDisconnect = null;
+      
+      if (d.lastDisconnect) {
+        d.timeLeft -= (Date.now() - d.lastDisconnect);
+        d.lastDisconnect = null;
       }
 
-      if (userData.timeLeft <= 0) {
-        handleTimeout(userId, roomId);
-        return;
-      }
+      if (d.timeLeft <= 0) { handleTimeout(userId, roomId); return; }
 
       socket.join(roomId);
       users[userId].socketId = socket.id;
 
-      const game = games[roomId];
       socket.emit('game_start', { 
-        color: userData.color, roomId, 
-        fen: game.fen, history: game.history,
-        mode: game.mode,
-        opponent: games[roomId].players[userData.color === 'white' ? 'black' : 'white']
+        color: d.color, roomId, 
+        fen: games[roomId].fen, history: games[roomId].history,
+        mode: games[roomId].mode,
+        opponent: games[roomId].players[d.color === 'white' ? 'black' : 'white']
       });
       socket.to(roomId).emit('opponent_reconnected');
     }
   }
 
-  // matchmaking
+  // Matchmaking
   socket.on('find_game', async (data) => {
     const mode = data?.mode || 'standard';
-    
-    // disable multiple queueing
     if (queues[mode] && queues[mode].userId === userId) return;
 
     if (queues[mode]) {
@@ -94,8 +78,7 @@ io.on('connection', (socket) => {
       games[roomId] = { 
         white: opponent.userId, black: userId, 
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 
-        history: [],
-        mode: mode,
+        history: [], mode,
         players: { white: p1Data, black: p2Data }
       };
 
@@ -107,11 +90,10 @@ io.on('connection', (socket) => {
 
     } else {
       queues[mode] = { socket, userId };
-      socket.emit('waiting', `Searching for ${mode} match...`);
+      socket.emit('waiting', `Searching ${mode}...`);
     }
   });
 
-  // make move
   socket.on('make_move', (data) => {
     const game = games[data.roomId];
     if (game) {
@@ -141,13 +123,19 @@ io.on('connection', (socket) => {
 });
 
 async function getUserData(id) {
-  if (id.startsWith('guest')) return { id, username: 'Guest', rating: 1200, avatar: '', bio: 'Just a guest' };
+  if (id.startsWith('guest')) return { id, username: 'Guest', rating: 1200, avatar: '', bio: 'Guest' };
   try {
     const u = await User.findById(id);
     if (!u) return { id, username: 'Unknown', rating: 1200 };
-    if (u.isPrivate) return { id: u._id, username: 'Anonymous', rating: u.rating, avatar: '', bio: 'Private.', isPrivate: true };
-    return { id: u._id, username: u.username, rating: u.rating, avatar: u.avatar, bio: u.bio, wins: u.wins, matches: u.matches };
-  } catch (e) { return { id, username: 'Error', rating: 0 }; }
+    if (u.isPrivate) {
+      return { id: u._id, username: 'Anonymous', rating: u.rating, avatar: '', bio: 'Private', isPrivate: true };
+    }
+    return { 
+      id: u._id, username: u.username, rating: u.rating, 
+      avatar: u.avatar, bio: u.bio, 
+      wins: u.wins, draws: u.draws || 0, matches: u.matches, highestRating: u.highestRating || u.rating
+    };
+  } catch (e) { return { username: 'Error', rating: 0 }; }
 }
 
 async function handleTimeout(userId, roomId) {
@@ -164,19 +152,33 @@ async function handleTimeout(userId, roomId) {
 
 async function updateRatings(winnerId, loserId, draw = false) {
   try {
-    if (!winnerId || !loserId || winnerId.startsWith('guest') || loserId.startsWith('guest')) return;
+    if (winnerId.startsWith('guest') || loserId.startsWith('guest')) return;
     const winner = await User.findById(winnerId);
     const loser = await User.findById(loserId);
     if (!winner || !loser) return;
 
     const K = 32;
     const expectedWinner = 1 / (1 + Math.pow(10, (loser.rating - winner.rating) / 400));
-    const actualScore = draw ? 0.5 : 1;
-    winner.rating = Math.round(winner.rating + K * (actualScore - expectedWinner));
-    if (!draw) loser.rating = Math.round(loser.rating - K * (actualScore - expectedWinner));
+    const expectedLoser = 1 / (1 + Math.pow(10, (winner.rating - loser.rating) / 400));
 
-    if (!draw) winner.wins++;
+    const actualScoreWinner = draw ? 0.5 : 1;
+    winner.rating = Math.round(winner.rating + K * (actualScoreWinner - expectedWinner));
+    
+    const actualScoreLoser = draw ? 0.5 : 0;
+    loser.rating = Math.round(loser.rating + K * (actualScoreLoser - expectedLoser));
+
+    // Update Records
+    if (winner.rating > (winner.highestRating || 0)) winner.highestRating = winner.rating;
+    if (loser.rating > (loser.highestRating || 0)) loser.highestRating = loser.rating;
+
     winner.matches++; loser.matches++;
+    if (draw) {
+      winner.draws = (winner.draws || 0) + 1;
+      loser.draws = (loser.draws || 0) + 1;
+    } else {
+      winner.wins++;
+    }
+    
     await winner.save(); await loser.save();
   } catch (e) { console.error(e); }
 }
