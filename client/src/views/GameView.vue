@@ -10,10 +10,10 @@ const router = useRouter();
 const route = useRoute();
 const game = new Chess();
 
-// --- 1. CONFIG & SOCKET ---
+// auto-detect server URL
 const SERVER_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:3001' 
-  : 'https://chess-api.onrender.com';
+  : 'https://chess-api-18o3.onrender.com';
 
 const getUserId = () => {
   const user = authService.getUser();
@@ -26,9 +26,14 @@ const getUserId = () => {
   return id;
 };
 const userId = getUserId();
-const socket = io(SERVER_URL, { query: { userId: userId } });
 
-// --- 2. GAME STATE ---
+// 
+const socket = io(SERVER_URL, { 
+  query: { userId: userId },
+  transports: ['websocket', 'polling'],
+  withCredentials: true
+});
+
 const status = ref('Welcome');
 const isSearching = ref(false);
 const myColor = ref(null);
@@ -39,14 +44,13 @@ const opponentDisconnected = ref(false);
 const currentTurnColor = ref('w');
 const gameMode = ref('standard');
 
-// Players Data
+// player data
 const opponentInfo = ref({ username: 'Opponent', rating: '???', avatar: '', id: null, rank: null, wins: 0, matches: 0 });
 const currentUserInfo = ref({ username: 'You', rating: 1200, avatar: '', rank: null, wins: 0, matches: 0 });
 
-// Minesweeper State
 const mineState = ref({}); 
 
-// UI States
+// UI states
 const showSettings = ref(false);
 const showOpponentProfile = ref(false);
 const opponentProfileData = ref(null);
@@ -54,7 +58,6 @@ const opponentProfileData = ref(null);
 const isMyTurn = computed(() => myColor.value && currentTurnColor.value === myColor.value.charAt(0));
 const canViewProfile = computed(() => opponentInfo.value.username !== 'Anonymous' && opponentInfo.value.id);
 
-// --- 3. LOGIC & HISTORY ---
 const pieceNames = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
 const getMoveDesc = (move) => {
   const piece = pieceNames[move.piece];
@@ -79,7 +82,6 @@ const formattedHistory = computed(() => {
   return p;
 });
 
-// --- 4. SETTINGS & INIT ---
 const boardScale = ref(80);
 const useGlassEffects = ref(true);
 const themes = [{id:'default',name:'MINT'},{id:'blue',name:'CYBER'},{id:'gold',name:'GOLD'}];
@@ -95,7 +97,7 @@ const getRankClass = (rank) => {
 };
 
 onMounted(async () => {
-  // Завантажуємо свої актуальні дані
+  // 
   const myStats = await authService.getLatestStats();
   if (myStats) {
     currentUserInfo.value = { 
@@ -121,7 +123,7 @@ const updateScale = (v) => { boardScale.value = v; localStorage.setItem('chess_s
 const toggleGlass = (v) => { useGlassEffects.value = v; localStorage.setItem('chess_glass', v); applyGlassEffect(); };
 const applyGlassEffect = () => document.body.classList.toggle('no-glass', !useGlassEffects.value);
 
-// --- ACTIONS ---
+// actions
 const viewOpponent = async () => {
   if (!canViewProfile.value) return;
   try {
@@ -169,7 +171,7 @@ const updateGameState = () => {
   }, 10);
 };
 
-// --- CORE HANDLERS ---
+// core handlers
 const handleSelect = (sq) => {
   if(!sq) { validMoves.value=[]; return; }
   const p = game.get(sq);
@@ -189,21 +191,19 @@ const handleMove = ({ from, to }) => {
         history: game.history({verbose:true}) 
       });
       validMoves.value = [];
-      // Оновлюємо локально тільки для стандарту, для сапера чекаємо відповідь
+
       if (gameMode.value !== 'minesweeper') updateGameState();
     }
   } catch(e){}
 };
 
-// --- MINESWEEPER LOGIC ---
 const handleMoveResult = (data) => {
   if (data.move) { try { game.move(data.move); } catch (e) {} }
   
   if (data.explosion) {
-    game.remove(data.explosion); // Видаляємо фігуру з логіки
+    game.remove(data.explosion);
     mineState.value[data.explosion] = { type: 'exploded' };
     
-    // 🔥 SYNC FIX: Відправляємо серверу "чистий" FEN без фігури
     socket.emit('sync_fen', { roomId: currentRoom.value, fen: game.fen() });
   }
   
@@ -214,7 +214,6 @@ const handleMoveResult = (data) => {
   updateGameState();
 };
 
-// --- SOCKET EVENTS ---
 onMounted(() => {
   socket.on('connect', () => status.value = 'CONNECTED');
   
@@ -224,14 +223,12 @@ onMounted(() => {
     myColor.value = data.color;
     currentRoom.value = data.roomId;
     
-    // Дані про суперника (включаючи Rank та Stats з сервера)
     if(data.opponent) {
         opponentInfo.value = { 
             ...data.opponent,
             wins: data.opponent.wins || 0,
             matches: data.opponent.matches || 0
         };
-        // Додаткова підгрузка, якщо чогось немає
         if (data.opponent.id && !data.opponent.isPrivate && !data.opponent.rank) {
             authService.getPublicProfile(data.opponent.id).then(p => { 
                 opponentInfo.value.rank = p.rank;
@@ -258,7 +255,6 @@ onMounted(() => {
 
   socket.on('move_result', handleMoveResult);
   
-  // Підтримка класичного ходу
   socket.on('opponent_move', (data) => { 
       if (!data.explosion && !data.reveal) handleMoveResult({move: data.move || data}); 
   });
@@ -280,7 +276,7 @@ onMounted(() => {
     } 
   });
   
-  // Auto-start search if needed
+  // auto-start search if needed
   if (route.query.auto === 'true') {
      findGame();
   }

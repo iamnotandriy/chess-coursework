@@ -8,8 +8,12 @@ const User = require('./models/User');
 
 const app = express();
 
-// allow connections from any site
-app.use(cors({ origin: '*' }));
+// allow CORS for HTTP requests 
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -23,7 +27,17 @@ mongoose.connect(MONGO_URI)
 app.use('/api/auth', authRoutes);
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+
+// allow CORS for socket.io
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["my-custom-header"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
+});
 
 // game state
 const games = {}; 
@@ -35,6 +49,7 @@ const queues = { standard: null, casual: null };
 io.on('connection', (socket) => {
   const userId = socket.handshake.query.userId;
   if (!userId) { socket.disconnect(); return; }
+
   console.log(`Connected: ${userId}`);
 
   // reconnect
@@ -60,9 +75,8 @@ io.on('connection', (socket) => {
   socket.on('find_game', async (data) => {
     const mode = data?.mode || 'standard';
     
-  if (mode === 'standard' && userId.startsWith('guest_')) {
-    return; 
-    }
+    // block guests from ranked
+    if (mode === 'standard' && userId.startsWith('guest_')) return;
 
     if (queues[mode] && queues[mode].userId === userId) return;
 

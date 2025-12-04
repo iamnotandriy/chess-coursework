@@ -156,7 +156,7 @@ const setActive = (id) => { activeCategory.value = id; };
     <div class="user-badge glass-panel login-trigger" v-else @click="showAuthModal = true"><span class="u-name">LOGIN / REGISTER</span></div>
 
     <div class="menu-center-wrapper">
-      <h1 class="game-title">CHESS <span class="accent-text">MASTER</span></h1>
+      <h1 class="game-title">CHESS <span class="accent-text">PLUS</span></h1>
       <div class="menu-container">
         <div class="main-column"><div v-for="item in menuItems" :key="item.id" class="menu-item" :class="{active: activeCategory === item.id}" @mouseenter="setActive(item.id)"><span class="label">{{item.label}}</span></div></div>
         <div class="menu-divider"></div>
