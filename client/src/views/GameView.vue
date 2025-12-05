@@ -324,7 +324,7 @@ onUnmounted(() => socket.disconnect());
     </div></Transition>
 
     <div class="content-area">
-      <Transition name="fade"><div v-if="opponentDisconnected && !gameOver" class="disconnect-banner glass-panel">⚠️ Opponent Offline. Time Bank ticking...</div></Transition>
+      <Transition name="fade"><div v-if="opponentDisconnected && !gameOver" class="disconnect-banner glass-panel">⚠️ Opponent Offline.</div></Transition>
       
       <Transition name="fade"><div v-if="!currentRoom" class="center-wrapper">
         <div class="lobby-card glass-panel">
